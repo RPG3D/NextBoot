@@ -1,0 +1,27 @@
+# ---- Build output ----
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+
+# ---- Runtime artifacts (written next to exe or by the tools) ----
+out.txt
+order-selftest.txt
+enum-log.txt
+manifest.tsv
+*.log
+
+# Diagnostic dumps of real UEFI NVRAM — never commit these
+live_Boot*.bin
+*.bin
+UEFI-Backup-*/
+UEFI-Before-Clean-*/
+UEFI-Now-*/
+
+# ---- OS junk ----
+Thumbs.db
+desktop.ini
+.DS_Store
