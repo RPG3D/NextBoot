@@ -2,9 +2,24 @@
 
 **A tiny Windows GUI for choosing the *next* boot — plus real UEFI boot-order editing.**
 
-Reads the firmware boot list straight from UEFI NVRAM (`Boot####` variables, not the OpenCore config), lets you pick one entry for a single boot (`BootNext`), or reorder the permanent list (`BootOrder`). Useful for dual-boot Hackintosh / Linux setups where the F11 boot menu is unreliable (e.g. a 2.4G/bluetooth keyboard that the firmware can't see).
+Reads the firmware boot list straight from UEFI NVRAM (`Boot####` variables, not the OpenCore config), lets you pick one entry for a single boot (`BootNext`), or reorder the permanent list (`BootOrder`). Built for a **Windows 11 + macOS (OpenCore/Hackintosh)** dual-boot machine: switch over for a single boot, or change the default system — without racing the F11 key at power-on (2.4G/bluetooth keyboards often aren't visible to the firmware at all). Also works for Windows + Linux.
 
 Zero third-party dependencies — plain Win32 P/Invoke.
+
+## 动机 / Why
+
+一台机器双系统：**Windows 11 + macOS（Hackintosh / OpenCore）**，日常要来回切。原本的做法都很别扭：
+
+- 开机狂按 F11 / ESC 抢固件启动菜单——慢，而且 2.4G / 蓝牙键盘在固件阶段根本不被识别，按了等于没按；
+- 进 BIOS 改默认启动项——为了切一次系统去动全局配置，切几轮就忘了当前默认是谁；
+- 用 OpenCore 自己的启动菜单——前提是已经进了 OpenCore，解决不了「连固件这一关都过不去」。
+
+所以写了 NextBoot，把这件事变成两个动作：
+
+- **临时切一次**（Windows → macOS，或者反过来）：选中目标 →「设为 BootNext」→ 重启，一次性生效，之后自动回到默认系统；
+- **换默认系统**：上移 / 下移 →「保存为永久启动顺序」，相当于图形化操作固件的启动顺序（底层就是 `BootNext` / `BootOrder` 两个标准 UEFI 变量，等价于 `bcdedit /set {fwbootmgr} bootsequence`）。
+
+设计上刻意保守：只写这两个变量，不删启动项、不碰 Secure Boot 相关变量，每次写前自动全量备份 NVRAM。
 
 ## 中文说明
 
