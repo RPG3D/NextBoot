@@ -41,19 +41,58 @@ NextBoot 用一个图形界面完成 `bcdedit /set {fwbootmgr} bootsequence` 能
 
 ## 实现 / How it works
 
-纯 Win32 P/Invoke，`NextBoot/MainForm.cs` 里的 `Uefi` 静态类：
+纯 Win32 P/Invoke，无第三方依赖；所有 UEFI 相关逻辑集中在一个 `Uefi` 静态类里（`NextBoot/MainForm.cs`）。
 
-| 操作 | API | UEFI 语义 |
-|---|---|---|
-| 开启权限 | `AdjustTokenPrivileges(SeSystemEnvironmentPrivilege)` | 变量读写的先决条件（非管理员连读都不行） |
-| 枚举变量 | `NtEnumerateSystemEnvironmentValuesEx(2, …)` | 记录头 = next / ValueOffset / ValueSize / attrs / GUID / 名字(UTF-16)，过滤 `EFI_GLOBAL_VARIABLE` = `8BE4DF61-93CA-11D2-AA0D-00E098032B8C` |
-| 读 `BootCurrent`/`BootNext`/`Timeout`/`BootOrder` | `GetFirmwareEnvironmentVariableExW` | 变量不存在返回 null，不算错误 |
-| 解析启动项 | 自行解析 `EFI_LOAD_OPTION`（u32 属性 + u16 FilePathListLength + UTF-16 描述 + 设备路径节点表） | 每个 `Boot####` |
-| 设一次性启动 | `SetFirmwareEnvironmentVariableExW("BootNext", …, 2 字节, 0x7)` | NV\|BS\|RT |
-| 设永久顺序 | 同上写 `BootOrder`（保持原属性位），写后回读校验 | — |
-| 清除 BootNext | 0 长度写入即删除变量 | — |
+### 1. 拿权限
 
-`BootNext` 与 `bcdedit /set {fwbootmgr} bootsequence {GUID}` 等价（bcdedit 底层就是写固件 BootNext），但这里不依赖本地化文本解析，能直接显示真正的 `.efi` 路径。
+读写 UEFI 变量要求进程持有 `SeSystemEnvironmentPrivilege`，非管理员连读取都会失败。程序启动后用
+`AdjustTokenPrivileges` 打开该特权，之后所有调用才可能成功。
+
+### 2. 枚举变量
+
+用 `NtEnumerateSystemEnvironmentValuesEx(2, …)` 一次性取出固件变量表，只保留
+`EFI_GLOBAL_VARIABLE`（`8BE4DF61-93CA-11D2-AA0D-00E098032B8C`）名下的条目。每条记录的头是固定 32 字节：
+
+```text
++0   下一条记录的偏移（0 表示结束）
++4   数据偏移 ValueOffset
++8   数据长度 ValueSize
++12  变量属性
++16  厂商 GUID（16 字节）
++32  变量名（UTF-16，以 \0 结尾）
+```
+
+> `+4` 是偏移、`+8` 是长度——这两个字段极易记反，反了整张表都读成垃圾。
+
+### 3. 读变量
+
+`BootCurrent` / `BootNext` / `Timeout` / `BootOrder` 用 `GetFirmwareEnvironmentVariableExW` 单独读取。
+变量不存在时返回 `ERROR_ENVVAR_NOT_FOUND`，按「未设置」处理，不算错误。
+
+### 4. 解析启动项
+
+每个 `Boot####` 的值是一段 `EFI_LOAD_OPTION`，按 UEFI 规范自己拆：
+
+- `u32` 属性（Active / Hidden / Category）
+- `u16` 设备路径列表长度
+- UTF-16 描述，以 `\0` 结尾
+- 设备路径节点表，每节点 `Type(1) + SubType(1) + Length(2) + Data`
+  - `4/1`（MEDIA/HD）→ 分区号 + GPT 分区 GUID，用来换算「磁盘X·分区Y」
+  - `4/4`（MEDIA/FILE_PATH）→ 真正的 `\EFI\...\xx.efi`
+- 其余字节是可选数据
+
+### 5. 写入
+
+| 目标 | 做法 |
+|---|---|
+| 设一次性启动 | 向 `BootNext` 写 2 字节索引，属性 `0x7`（NV \| BS \| RT） |
+| 设永久顺序 | 把新序列写成 `BootOrder`，保持变量原属性位 |
+| 清除 BootNext | 以 0 长度写入，即删除该变量 |
+
+三处写入统一走「写前全量备份 → 写入 → 回读校验」，校验不一致就报错，不会静默成功。
+
+`BootNext` 与 `bcdedit /set {fwbootmgr} bootsequence {GUID}` 等价（bcdedit 底层就是写固件 BootNext），
+区别在于这里不解析本地化文本输出，还能直接显示条目真正的 `.efi` 路径。
 
 ## 构建 / Build
 
